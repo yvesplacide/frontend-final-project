@@ -1,11 +1,10 @@
 // frontend/src/components/declaration/DeclarationForm.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'react-toastify';
-import api from '../../services/api'; // Pour récupérer la liste des commissariats
-import dayjs from 'dayjs'; // Pour gérer les dates
+import dayjs from 'dayjs';
 
-function DeclarationForm({ onSubmitSuccess }) {
+function DeclarationForm({ onSubmit, isSubmitting }) {
     const { register, handleSubmit, watch, setValue, formState: { errors }, reset } = useForm({
         defaultValues: {
             personDetails: {
@@ -21,97 +20,33 @@ function DeclarationForm({ onSubmitSuccess }) {
             }
         }
     });
-    const declarationType = watch('declarationType'); // Observe le type de déclaration pour afficher les champs conditionnels
-    const [commissariats, setCommissariats] = useState([]);
-    const [loadingCommissariats, setLoadingCommissariats] = useState(true);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const declarationType = watch('declarationType');
 
-    useEffect(() => {
-        // Charger la liste des commissariats au montage du composant
-        const fetchCommissariats = async () => {
-            try {
-                const response = await api.get('/commissariats');
-                setCommissariats(response.data);
-            } catch (error) {
-                toast.error('Erreur lors du chargement des commissariats.');
-                console.error('Erreur fetching commissariats:', error);
-            } finally {
-                setLoadingCommissariats(false);
-            }
-        };
-        fetchCommissariats();
-    }, []);
-
-    const onSubmit = async (data) => {
+    const handleFormSubmit = async (data) => {
         try {
-            setIsSubmitting(true);
-            console.log('Données du formulaire avant envoi:', data);
-            
             // Vérifier les données de la personne
             if (data.declarationType === 'personne') {
-                console.log('Données de la personne avant envoi:', data.personDetails);
                 if (!data.personDetails.firstName || !data.personDetails.lastName) {
                     throw new Error('Le nom et le prénom sont requis');
                 }
             }
 
-            // Ajuster la date pour correspondre au format attendu par le backend (ISO 8601)
+            // Ajuster la date pour le format ISO
             data.declarationDate = dayjs(data.declarationDate).toISOString();
 
-            // Créer un FormData pour l'upload de fichiers et les autres champs
-            const formData = new FormData();
-            
-            // Ajouter les champs de base
-            formData.append('declarationType', data.declarationType);
-            formData.append('declarationDate', data.declarationDate);
-            formData.append('location', data.location);
-            formData.append('description', data.description);
-            formData.append('commissariat', data.commissariat);
-
-            // Ajouter les détails spécifiques selon le type de déclaration
-            if (data.declarationType === 'objet' && data.objectDetails) {
-                formData.append('objectDetails', JSON.stringify(data.objectDetails));
-            } else if (data.declarationType === 'personne' && data.personDetails) {
-                formData.append('personDetails', JSON.stringify(data.personDetails));
-            }
-
-            // Ajouter les photos si présentes
-            if (data.photos && data.photos.length > 0) {
-                for (let i = 0; i < data.photos.length; i++) {
-                    formData.append('photos', data.photos[i]);
-                }
-            }
-
-            console.log('FormData avant envoi:');
-            for (let pair of formData.entries()) {
-                console.log(pair[0] + ': ' + pair[1]);
-            }
-
-            // Envoyer la requête
-            const response = await api.post('/declarations', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-            });
-
-            console.log('Réponse du serveur:', response.data);
-            toast.success('Déclaration soumise avec succès !');
-            reset(); // Réinitialise le formulaire
-            if (onSubmitSuccess) {
-                onSubmitSuccess(response.data); // Passe la nouvelle déclaration au parent
-            }
+            // Appeler la fonction onSubmit passée en props
+            await onSubmit(data);
+            reset();
         } catch (error) {
             console.error('Erreur lors de la soumission de la déclaration:', error);
-            toast.error(error.response?.data?.message || 'Erreur lors de la soumission de la déclaration.');
-        } finally {
-            setIsSubmitting(false);
+            toast.error(error.message || 'Erreur lors de la soumission de la déclaration.');
         }
     };
 
     return (
         <div className="declaration-form-container">
             <h3>Faire une nouvelle déclaration</h3>
-            <form onSubmit={handleSubmit(onSubmit)} className="declaration-form">
+            <form onSubmit={handleSubmit(handleFormSubmit)} className="declaration-form">
                 <div className="form-group">
                     <label htmlFor="declarationType">Type de déclaration</label>
                     <select
@@ -295,15 +230,12 @@ function DeclarationForm({ onSubmitSuccess }) {
                         </div>
                         <div className="form-group">
                             <label htmlFor="personDetails.dateOfBirth">Date de naissance</label>
-                            <div className="date-input-container">
-                                <input
-                                    type="date"
-                                    id="personDetails.dateOfBirth"
-                                    {...register('personDetails.dateOfBirth', { required: 'La date de naissance est requise' })}
-                                    max={dayjs().format('YYYY-MM-DD')}
-                                    className="form-control"
-                                />
-                            </div>
+                            <input
+                                type="date"
+                                id="personDetails.dateOfBirth"
+                                {...register('personDetails.dateOfBirth', { required: 'La date de naissance est requise' })}
+                                className="form-control"
+                            />
                             {errors.personDetails?.dateOfBirth && <span className="error-message">{errors.personDetails.dateOfBirth.message}</span>}
                         </div>
                         <div className="form-group">
@@ -313,10 +245,10 @@ function DeclarationForm({ onSubmitSuccess }) {
                                 {...register('personDetails.gender', { required: 'Le genre est requis' })}
                                 className="form-control"
                             >
-                                <option value="">Sélectionner un genre</option>
-                                <option value="Masculin">Masculin</option>
-                                <option value="Féminin">Féminin</option>
-                                <option value="Autre">Autre</option>
+                                <option value="">Sélectionner</option>
+                                <option value="homme">Homme</option>
+                                <option value="femme">Femme</option>
+                                <option value="autre">Autre</option>
                             </select>
                             {errors.personDetails?.gender && <span className="error-message">{errors.personDetails.gender.message}</span>}
                         </div>
@@ -363,62 +295,14 @@ function DeclarationForm({ onSubmitSuccess }) {
                                 placeholder="Cicatrices, tatouages, particularités physiques..."
                             />
                         </div>
-                        <div className="form-group">
-                            <label htmlFor="personDetails.lastSeenLocation">Dernier lieu vu</label>
-                            <input
-                                type="text"
-                                id="personDetails.lastSeenLocation"
-                                {...register('personDetails.lastSeenLocation', { required: 'Le dernier lieu vu est requis' })}
-                                className="form-control"
-                                placeholder="Adresse ou lieu précis où la personne a été vue pour la dernière fois"
-                            />
-                            {errors.personDetails?.lastSeenLocation && <span className="error-message">{errors.personDetails.lastSeenLocation.message}</span>}
-                        </div>
                     </div>
                 )}
 
-                <div className="form-group">
-                    <label htmlFor="commissariat">Commissariat</label>
-                    <select
-                        id="commissariat"
-                        {...register('commissariat', { 
-                            required: 'Le commissariat est requis',
-                            onChange: (e) => {
-                                setValue('commissariat', e.target.value);
-                            }
-                        })}
-                        disabled={loadingCommissariats}
-                        className="form-control"
-                    >
-                        <option value="">Sélectionner un commissariat</option>
-                        {commissariats.map((commissariat) => (
-                            <option key={commissariat._id} value={commissariat._id}>
-                                {commissariat.name} - {commissariat.city}
-                            </option>
-                        ))}
-                    </select>
-                    {errors.commissariat && <span className="error-message">{errors.commissariat.message}</span>}
+                <div className="form-actions">
+                    <button type="submit" className="submit-btn" disabled={isSubmitting}>
+                        {isSubmitting ? 'Envoi en cours...' : 'Soumettre la déclaration'}
+                    </button>
                 </div>
-
-                <div className="form-group">
-                    <label htmlFor="photos">Photos (optionnel)</label>
-                    <input
-                        type="file"
-                        id="photos"
-                        multiple
-                        accept="image/*"
-                        {...register('photos')}
-                    />
-                    {errors.photos && <span className="error-message">{errors.photos.message}</span>}
-                </div>
-
-                <button 
-                    type="submit" 
-                    className="btn primary-btn"
-                    disabled={isSubmitting}
-                >
-                    {isSubmitting ? 'Soumission en cours...' : 'Soumettre la déclaration'}
-                </button>
             </form>
         </div>
     );

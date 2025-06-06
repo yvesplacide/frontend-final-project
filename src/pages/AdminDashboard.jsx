@@ -1,11 +1,12 @@
 // frontend/src/pages/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../services/api';
+import { mockUsers, mockDeclarations } from '../services/mockData';
 import { toast } from 'react-toastify';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import '../styles/AdminDashboard.css';
+
 dayjs.locale('fr');
 
 function AdminDashboard() {
@@ -41,49 +42,58 @@ function AdminDashboard() {
 
     // Charger les données
     useEffect(() => {
-        fetchCommissariats();
-        fetchAgents();
-        fetchUsers();
+        loadData();
     }, []);
 
-    const fetchCommissariats = async () => {
+    const loadData = () => {
         try {
-            const response = await api.get('/commissariats');
-            setCommissariats(response.data);
-        } catch (err) {
-            console.error('Erreur lors du chargement des commissariats:', err);
-            toast.error('Erreur lors du chargement des commissariats');
-        }
-    };
+            if (!user || user.role !== 'admin') {
+                throw new Error('Accès non autorisé. Vous devez être administrateur.');
+            }
 
-    const fetchAgents = async () => {
-        try {
-            const response = await api.get('/users?role=commissariat_agent');
-            setAgents(response.data);
-        } catch (err) {
-            console.error('Erreur lors du chargement des agents:', err);
-            toast.error('Erreur lors du chargement des agents');
-        }
-    };
+            // Filtrer les utilisateurs par rôle
+            const regularUsers = mockUsers.filter(u => u.role === 'user');
+            const agentUsers = mockUsers.filter(u => u.role === 'commissariat_agent');
 
-    const fetchUsers = async () => {
-        try {
-            const response = await api.get('/users?role=user');
-            setUsers(response.data);
+            // Créer une liste de commissariats à partir des agents
+            const commissariatsList = agentUsers.reduce((acc, agent) => {
+                if (agent.commissariat && !acc.find(c => c.id === agent.commissariat)) {
+                    acc.push({
+                        id: agent.commissariat,
+                        name: `Commissariat ${agent.commissariat}`,
+                        address: 'Adresse du commissariat',
+                        city: 'Ville du commissariat',
+                        phone: '01 23 45 67 89',
+                        email: `commissariat${agent.commissariat}@example.com`
+                    });
+                }
+                return acc;
+            }, []);
+
+            setCommissariats(commissariatsList);
+            setAgents(agentUsers);
+            setUsers(regularUsers);
+            setError(null);
         } catch (err) {
-            console.error('Erreur lors du chargement des utilisateurs:', err);
-            toast.error('Erreur lors du chargement des utilisateurs');
+            console.error('Erreur lors du chargement des données:', err);
+            setError(err.message);
+            toast.error(err.message);
         } finally {
             setLoading(false);
         }
     };
 
     // Gestion des commissariats
-    const handleCreateCommissariat = async (e) => {
+    const handleCreateCommissariat = (e) => {
         e.preventDefault();
         try {
-            const response = await api.post('/commissariats', newCommissariat);
-            setCommissariats([...commissariats, response.data]);
+            const newCommissariatId = Date.now();
+            const commissariat = {
+                id: newCommissariatId,
+                ...newCommissariat
+            };
+
+            setCommissariats([...commissariats, commissariat]);
             setNewCommissariat({
                 name: '',
                 address: '',
@@ -94,25 +104,24 @@ function AdminDashboard() {
             toast.success('Commissariat créé avec succès');
         } catch (err) {
             console.error('Erreur lors de la création du commissariat:', err);
-            toast.error(err.response?.data?.message || 'Erreur lors de la création du commissariat');
+            toast.error('Erreur lors de la création du commissariat');
         }
     };
 
-    const handleDeleteCommissariat = async (id) => {
+    const handleDeleteCommissariat = (id) => {
         if (window.confirm('Êtes-vous sûr de vouloir supprimer ce commissariat ?')) {
             try {
-                await api.delete(`/commissariats/${id}`);
-                setCommissariats(commissariats.filter(c => c._id !== id));
+                setCommissariats(commissariats.filter(c => c.id !== id));
                 toast.success('Commissariat supprimé avec succès');
             } catch (err) {
                 console.error('Erreur lors de la suppression du commissariat:', err);
-                toast.error(err.response?.data?.message || 'Erreur lors de la suppression du commissariat');
+                toast.error('Erreur lors de la suppression du commissariat');
             }
         }
     };
 
     // Gestion des agents
-    const handleCreateAgent = async (e) => {
+    const handleCreateAgent = (e) => {
         e.preventDefault();
         try {
             if (!newAgent.commissariatId) {
@@ -120,18 +129,15 @@ function AdminDashboard() {
                 return;
             }
 
-            // Formater la date de naissance en format ISO
-            const formattedData = {
+            const newAgentId = Date.now();
+            const agent = {
+                id: newAgentId,
                 ...newAgent,
-                dateOfBirth: newAgent.dateOfBirth ? new Date(newAgent.dateOfBirth).toISOString() : null,
                 role: 'commissariat_agent',
                 commissariat: newAgent.commissariatId
             };
 
-            console.log('Données envoyées:', formattedData);
-
-            const response = await api.post('/users', formattedData);
-            setAgents([...agents, response.data]);
+            setAgents([...agents, agent]);
             setNewAgent({
                 firstName: '',
                 lastName: '',
@@ -147,94 +153,83 @@ function AdminDashboard() {
             toast.success('Agent créé avec succès');
         } catch (err) {
             console.error('Erreur lors de la création de l\'agent:', err);
-            toast.error(err.response?.data?.message || 'Erreur lors de la création de l\'agent');
+            toast.error('Erreur lors de la création de l\'agent');
         }
     };
 
-    const handleDeleteAgent = async (id) => {
+    const handleDeleteAgent = (id) => {
         if (window.confirm('Êtes-vous sûr de vouloir supprimer cet agent ?')) {
             try {
-                await api.delete(`/users/${id}`);
-                setAgents(agents.filter(a => a._id !== id));
+                setAgents(agents.filter(a => a.id !== id));
                 toast.success('Agent supprimé avec succès');
             } catch (err) {
                 console.error('Erreur lors de la suppression de l\'agent:', err);
-                toast.error(err.response?.data?.message || 'Erreur lors de la suppression de l\'agent');
-            }
-        }
-    };
-
-    // Gestion des utilisateurs
-    const handleDeleteUser = async (id) => {
-        if (window.confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
-            try {
-                await api.delete(`/users/${id}`);
-                setUsers(users.filter(u => u._id !== id));
-                toast.success('Utilisateur supprimé avec succès');
-            } catch (err) {
-                console.error('Erreur lors de la suppression de l\'utilisateur:', err);
-                toast.error(err.response?.data?.message || 'Erreur lors de la suppression de l\'utilisateur');
+                toast.error('Erreur lors de la suppression de l\'agent');
             }
         }
     };
 
     if (loading) {
-        return <div className="dashboard-loading">Chargement...</div>;
+        return <div className="loading">Chargement des données...</div>;
     }
 
     if (error) {
-        return <div className="dashboard-error">Erreur: {error}</div>;
+        return <div className="error">{error}</div>;
     }
 
-  return (
-    <div className="dashboard admin-dashboard">
-      <h2>Tableau de Bord Administrateur</h2>
-            <p>Bienvenue, {user?.firstName} ! Gérez les commissariats, les agents et les utilisateurs.</p>
+    return (
+        <div className="admin-dashboard">
+            <div className="dashboard-header">
+                <h2>Tableau de Bord Administrateur</h2>
+                <p>Bienvenue, {user?.firstName} !</p>
+            </div>
 
-            {/* Navigation par onglets */}
-            <div className="admin-tabs">
+            <div className="dashboard-tabs">
                 <button 
-                    className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
+                    className={activeTab === 'overview' ? 'active' : ''}
                     onClick={() => setActiveTab('overview')}
                 >
                     Vue d'ensemble
                 </button>
                 <button 
-                    className={`tab-button ${activeTab === 'commissariats' ? 'active' : ''}`}
+                    className={activeTab === 'commissariats' ? 'active' : ''}
                     onClick={() => setActiveTab('commissariats')}
                 >
                     Commissariats
                 </button>
                 <button 
-                    className={`tab-button ${activeTab === 'agents' ? 'active' : ''}`}
+                    className={activeTab === 'agents' ? 'active' : ''}
                     onClick={() => setActiveTab('agents')}
                 >
                     Agents
                 </button>
                 <button 
-                    className={`tab-button ${activeTab === 'users' ? 'active' : ''}`}
+                    className={activeTab === 'users' ? 'active' : ''}
                     onClick={() => setActiveTab('users')}
                 >
                     Utilisateurs
                 </button>
             </div>
 
-            {/* Contenu des onglets */}
-            <div className="tab-content">
+            <div className="dashboard-content">
                 {activeTab === 'overview' && (
                     <div className="overview-section">
                         <div className="stats-cards">
                             <div className="stat-card">
                                 <h3>Commissariats</h3>
-                                <p className="stat-number">{commissariats.length}</p>
+                                <p>{commissariats.length}</p>
                             </div>
                             <div className="stat-card">
                                 <h3>Agents</h3>
-                                <p className="stat-number">{agents.length}</p>
+                                <p>{agents.length}</p>
                             </div>
                             <div className="stat-card">
                                 <h3>Utilisateurs</h3>
-                                <p className="stat-number">{users.length}</p>
+                                <p>{users.length}</p>
+                            </div>
+                            <div className="stat-card">
+                                <h3>Déclarations</h3>
+                                <p>{mockDeclarations.length}</p>
                             </div>
                         </div>
                     </div>
@@ -243,90 +238,79 @@ function AdminDashboard() {
                 {activeTab === 'commissariats' && (
                     <div className="commissariats-section">
                         <h3>Gestion des Commissariats</h3>
-                        
-                        {/* Formulaire de création de commissariat */}
-                        <form onSubmit={handleCreateCommissariat} className="admin-form">
-                            <h4>Créer un nouveau commissariat</h4>
+                        <form onSubmit={handleCreateCommissariat} className="form-section">
+                            <h4>Nouveau Commissariat</h4>
                             <div className="form-group">
-                                <label>Nom du commissariat</label>
                                 <input
                                     type="text"
+                                    placeholder="Nom du commissariat"
                                     value={newCommissariat.name}
-                                    onChange={(e) => setNewCommissariat({...newCommissariat, name: e.target.value})}
+                                    onChange={(e) => setNewCommissariat(prev => ({ ...prev, name: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Adresse</label>
                                 <input
                                     type="text"
+                                    placeholder="Adresse"
                                     value={newCommissariat.address}
-                                    onChange={(e) => setNewCommissariat({...newCommissariat, address: e.target.value})}
+                                    onChange={(e) => setNewCommissariat(prev => ({ ...prev, address: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Ville</label>
                                 <input
                                     type="text"
+                                    placeholder="Ville"
                                     value={newCommissariat.city}
-                                    onChange={(e) => setNewCommissariat({...newCommissariat, city: e.target.value})}
+                                    onChange={(e) => setNewCommissariat(prev => ({ ...prev, city: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Téléphone</label>
                                 <input
                                     type="tel"
+                                    placeholder="Téléphone"
                                     value={newCommissariat.phone}
-                                    onChange={(e) => setNewCommissariat({...newCommissariat, phone: e.target.value})}
+                                    onChange={(e) => setNewCommissariat(prev => ({ ...prev, phone: e.target.value }))}
+                                    required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Email</label>
                                 <input
                                     type="email"
+                                    placeholder="Email"
                                     value={newCommissariat.email}
-                                    onChange={(e) => setNewCommissariat({...newCommissariat, email: e.target.value})}
+                                    onChange={(e) => setNewCommissariat(prev => ({ ...prev, email: e.target.value }))}
+                                    required
                                 />
                             </div>
-                            <button type="submit" className="btn primary-btn">Créer le commissariat</button>
+                            <button type="submit" className="btn-primary">Créer</button>
                         </form>
 
-                        {/* Liste des commissariats */}
-                        <div className="commissariats-list">
-                            <h4>Liste des commissariats</h4>
-                            <div className="table-responsive">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Nom</th>
-                                            <th>Ville</th>
-                                            <th>Email</th>
-                                            <th>Téléphone</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {commissariats.map(commissariat => (
-                                            <tr key={commissariat._id}>
-                                                <td>{commissariat.name}</td>
-                                                <td>{commissariat.city}</td>
-                                                <td>{commissariat.email}</td>
-                                                <td>{commissariat.phone}</td>
-                                                <td>
-                                                    <button 
-                                                        onClick={() => handleDeleteCommissariat(commissariat._id)}
-                                                        className="btn danger-btn"
-                                                    >
-                                                        Supprimer
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                        <div className="list-section">
+                            <h4>Liste des Commissariats</h4>
+                            {commissariats.length === 0 ? (
+                                <p>Aucun commissariat enregistré</p>
+                            ) : (
+                                <div className="commissariats-list">
+                                    {commissariats.map(commissariat => (
+                                        <div key={commissariat.id} className="commissariat-card">
+                                            <h5>{commissariat.name}</h5>
+                                            <p><strong>Ville:</strong> {commissariat.city}</p>
+                                            <p><strong>Adresse:</strong> {commissariat.address}</p>
+                                            <p><strong>Téléphone:</strong> {commissariat.phone}</p>
+                                            <p><strong>Email:</strong> {commissariat.email}</p>
+                                            <button
+                                                onClick={() => handleDeleteCommissariat(commissariat.id)}
+                                                className="btn-delete"
+                                            >
+                                                Supprimer
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -334,143 +318,94 @@ function AdminDashboard() {
                 {activeTab === 'agents' && (
                     <div className="agents-section">
                         <h3>Gestion des Agents</h3>
-                        
-                        {/* Formulaire de création d'agent */}
-                        <form onSubmit={handleCreateAgent} className="admin-form">
-                            <h4>Créer un nouvel agent</h4>
+                        <form onSubmit={handleCreateAgent} className="form-section">
+                            <h4>Nouvel Agent</h4>
                             <div className="form-group">
-                                <label>Prénom</label>
                                 <input
                                     type="text"
+                                    placeholder="Prénom"
                                     value={newAgent.firstName}
-                                    onChange={(e) => setNewAgent({...newAgent, firstName: e.target.value})}
+                                    onChange={(e) => setNewAgent(prev => ({ ...prev, firstName: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Nom</label>
                                 <input
                                     type="text"
+                                    placeholder="Nom"
                                     value={newAgent.lastName}
-                                    onChange={(e) => setNewAgent({...newAgent, lastName: e.target.value})}
+                                    onChange={(e) => setNewAgent(prev => ({ ...prev, lastName: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Email</label>
                                 <input
                                     type="email"
+                                    placeholder="Email"
                                     value={newAgent.email}
-                                    onChange={(e) => setNewAgent({...newAgent, email: e.target.value})}
+                                    onChange={(e) => setNewAgent(prev => ({ ...prev, email: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Mot de passe</label>
                                 <input
                                     type="password"
+                                    placeholder="Mot de passe"
                                     value={newAgent.password}
-                                    onChange={(e) => setNewAgent({...newAgent, password: e.target.value})}
+                                    onChange={(e) => setNewAgent(prev => ({ ...prev, password: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Téléphone</label>
                                 <input
                                     type="tel"
+                                    placeholder="Téléphone"
                                     value={newAgent.phone}
-                                    onChange={(e) => setNewAgent({...newAgent, phone: e.target.value})}
+                                    onChange={(e) => setNewAgent(prev => ({ ...prev, phone: e.target.value }))}
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Profession</label>
-                                <input
-                                    type="text"
-                                    value={newAgent.profession}
-                                    onChange={(e) => setNewAgent({...newAgent, profession: e.target.value})}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Adresse</label>
-                                <input
-                                    type="text"
-                                    value={newAgent.address}
-                                    onChange={(e) => setNewAgent({...newAgent, address: e.target.value})}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Date de naissance</label>
-                                <input
-                                    type="date"
-                                    value={newAgent.dateOfBirth}
-                                    onChange={(e) => setNewAgent({...newAgent, dateOfBirth: e.target.value})}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Lieu de naissance</label>
-                                <input
-                                    type="text"
-                                    value={newAgent.birthPlace}
-                                    onChange={(e) => setNewAgent({...newAgent, birthPlace: e.target.value})}
-                                    required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Commissariat</label>
                                 <select
                                     value={newAgent.commissariatId}
-                                    onChange={(e) => setNewAgent({...newAgent, commissariatId: e.target.value})}
+                                    onChange={(e) => setNewAgent(prev => ({ ...prev, commissariatId: e.target.value }))}
                                     required
                                 >
                                     <option value="">Sélectionner un commissariat</option>
                                     {commissariats.map(commissariat => (
-                                        <option key={commissariat._id} value={commissariat._id}>
-                                            {commissariat.name} ({commissariat.city})
+                                        <option key={commissariat.id} value={commissariat.id}>
+                                            {commissariat.name}
                                         </option>
                                     ))}
                                 </select>
                             </div>
-                            <button type="submit" className="btn primary-btn">Créer l'agent</button>
+                            <button type="submit" className="btn-primary">Créer</button>
                         </form>
 
-                        {/* Liste des agents */}
-                        <div className="agents-list">
-                            <h4>Liste des agents</h4>
-                            <div className="table-responsive">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Nom</th>
-                                            <th>Email</th>
-                                            <th>Commissariat</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {agents.map(agent => (
-                                            <tr key={agent._id}>
-                                                <td>{agent.firstName} {agent.lastName}</td>
-                                                <td>{agent.email}</td>
-                                                <td>
-                                                    {commissariats.find(c => c._id === agent.commissariat)?.name || 'Non assigné'}
-                                                </td>
-                                                <td>
-                                                    <button 
-                                                        onClick={() => handleDeleteAgent(agent._id)}
-                                                        className="btn danger-btn"
-                                                    >
-                                                        Supprimer
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                        <div className="list-section">
+                            <h4>Liste des Agents</h4>
+                            {agents.length === 0 ? (
+                                <p>Aucun agent enregistré</p>
+                            ) : (
+                                <div className="agents-list">
+                                    {agents.map(agent => (
+                                        <div key={agent.id} className="agent-card">
+                                            <h5>{agent.firstName} {agent.lastName}</h5>
+                                            <p><strong>Email:</strong> {agent.email}</p>
+                                            <p><strong>Téléphone:</strong> {agent.phone}</p>
+                                            <p><strong>Commissariat:</strong> {
+                                                commissariats.find(c => c.id === agent.commissariat)?.name || 'Non assigné'
+                                            }</p>
+                                            <button
+                                                onClick={() => handleDeleteAgent(agent.id)}
+                                                className="btn-delete"
+                                            >
+                                                Supprimer
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -478,44 +413,26 @@ function AdminDashboard() {
                 {activeTab === 'users' && (
                     <div className="users-section">
                         <h3>Gestion des Utilisateurs</h3>
-                        
-                        {/* Liste des utilisateurs */}
-                        <div className="users-list">
-                            <div className="table-responsive">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Nom</th>
-                                            <th>Email</th>
-                                            <th>Date d'inscription</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {users.map(user => (
-                                            <tr key={user._id}>
-                                                <td>{user.firstName} {user.lastName}</td>
-                                                <td>{user.email}</td>
-                                                <td>{dayjs(user.createdAt).format('DD/MM/YYYY')}</td>
-                                                <td>
-                                                    <button 
-                                                        onClick={() => handleDeleteUser(user._id)}
-                                                        className="btn danger-btn"
-                                                    >
-                                                        Supprimer
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                        <div className="list-section">
+                            {users.length === 0 ? (
+                                <p>Aucun utilisateur enregistré</p>
+                            ) : (
+                                <div className="users-list">
+                                    {users.map(user => (
+                                        <div key={user.id} className="user-card">
+                                            <h5>{user.firstName} {user.lastName}</h5>
+                                            <p><strong>Email:</strong> {user.email}</p>
+                                            <p><strong>Téléphone:</strong> {user.phone || 'Non renseigné'}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
             </div>
-    </div>
-  );
+        </div>
+    );
 }
 
 export default AdminDashboard;

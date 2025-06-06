@@ -1,6 +1,10 @@
 // frontend/src/App.jsx
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { AuthProvider } from './contexts/AuthContext';
+import ProtectedRoute from './components/common/ProtectedRoute';
 
 // Importez vos composants de mise en page et de pages
 import Header from './components/common/Header';
@@ -10,47 +14,82 @@ import AuthPage from './pages/AuthPage';
 import UserDashboard from './pages/UserDashboard';
 import CommissariatDashboard from './pages/CommissariatDashboard';
 import CommissariatDeclarations from './pages/CommissariatDeclarations';
+import CommissariatStatistics from './pages/CommissariatStatistics';
 import AdminDashboard from './pages/AdminDashboard';
 import NotFoundPage from './pages/NotFoundPage';
 import NewDeclarationPage from './pages/NewDeclarationPage';
+import DeclarationSuccessPage from './pages/DeclarationSuccessPage';
 import NotificationsPage from './pages/NotificationsPage';
-
-// Importez le composant pour la protection des routes
-import ProtectedRoute from './utils/ProtectedRoute';
+import StatisticsPage from './pages/StatisticsPage';
 
 import './index.css'; // Pour les styles globaux (ou App.css si vous en créez un)
 import './styles/DateInput.css';
 
 function App() {
   return (
-    <div className="App">
-      <Header />
-      <main className="main-content">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/auth" element={<AuthPage />} />
+    <AuthProvider>
+      <div className="app">
+        <Header />
+        <main>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/auth" element={<AuthPage />} />
+            <Route 
+              path="/user-dashboard" 
+              element={
+                <ProtectedRoute allowedRoles={['user']}>
+                  <UserDashboard />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/commissariat-dashboard" 
+              element={
+                <ProtectedRoute allowedRoles={['commissariat_agent']}>
+                  <CommissariatDashboard />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/statistics" 
+              element={
+                <ProtectedRoute allowedRoles={['commissariat_agent']}>
+                  <StatisticsPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/declaration/new" 
+              element={
+                <ProtectedRoute allowedRoles={['user']}>
+                  <NewDeclarationPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="/declaration-success" element={<DeclarationSuccessPage />} />
 
-          {/* Routes Protégées pour les Utilisateurs */}
-          <Route path="/user-dashboard" element={<ProtectedRoute allowedRoles={['user']}><UserDashboard /></ProtectedRoute>} />
-          <Route path="/declaration/new" element={<ProtectedRoute allowedRoles={['user']}><NewDeclarationPage /></ProtectedRoute>} />
-          {/* Ajoutez d'autres routes spécifiques à l'utilisateur ici */}
+            {/* Routes pour les Agents de Commissariat - Sans vérification */}
+            <Route path="/commissariat-declarations" element={<CommissariatDeclarations />} />
+            <Route path="/commissariat-statistics" element={<CommissariatStatistics />} />
 
-          {/* Routes Protégées pour les Agents de Commissariat */}
-          <Route path="/commissariat-dashboard" element={<ProtectedRoute allowedRoles={['commissariat_agent']}><CommissariatDashboard /></ProtectedRoute>} />
-          <Route path="/commissariat-dashboard/declarations" element={<ProtectedRoute allowedRoles={['commissariat_agent']}><CommissariatDeclarations /></ProtectedRoute>} />
-          <Route path="/commissariat-dashboard/statistics" element={<ProtectedRoute allowedRoles={['commissariat_agent']}><CommissariatDashboard /></ProtectedRoute>} />
-          {/* Ajoutez d'autres routes spécifiques au commissariat ici */}
+            {/* Routes Protégées pour les Administrateurs */}
+            <Route 
+              path="/admin-dashboard" 
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              } 
+            />
 
-          {/* Routes Protégées pour les Administrateurs */}
-          <Route path="/admin-dashboard" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
-          {/* Ajoutez d'autres routes spécifiques à l'admin ici */}
-
-          {/* Route 404 - Toujours en dernier */}
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </main>
-      <Footer />
-    </div>
+            {/* Route 404 - Toujours en dernier */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </main>
+        <ToastContainer position="top-right" autoClose={3000} />
+        <Footer />
+      </div>
+    </AuthProvider>
   );
 }
 

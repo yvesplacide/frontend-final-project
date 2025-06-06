@@ -1,7 +1,7 @@
 // frontend/src/pages/UserDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../services/api';
+import { mockDeclarations } from '../services/mockData';
 import { toast } from 'react-toastify';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
@@ -9,7 +9,6 @@ import DeclarationForm from '../components/declaration/DeclarationForm';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import '../styles/UserDashboard.css';
-import { generateReceiptContent } from '../components/declaration/ReceiptGenerator';
 
 dayjs.locale('fr');
 
@@ -23,30 +22,31 @@ function UserDashboard() {
     const [selectedPhoto, setSelectedPhoto] = useState(null);
     const [activeFilter, setActiveFilter] = useState('pending');
 
-    const fetchUserDeclarations = async () => {
+    const loadUserDeclarations = () => {
         try {
-            setLoading(true);
-            const response = await api.get('/declarations/my-declarations');
-            setDeclarations(response.data);
+            if (!user) {
+                throw new Error('Utilisateur non connecté');
+            }
+
+            // Filtrer les déclarations de l'utilisateur
+            const userDeclarations = mockDeclarations.filter(decl => 
+                decl.userId === user.id
+            );
+
+            setDeclarations(userDeclarations);
             setError(null);
         } catch (err) {
             console.error('Erreur lors du chargement des déclarations:', err);
-            const errorMessage = err.response?.data?.message || 'Impossible de charger vos déclarations.';
-            setError(errorMessage);
-            toast.error(errorMessage);
-            
-            // Si l'erreur est 401 (non autorisé), rediriger vers la page de connexion
-            if (err.response?.status === 401) {
-                window.location.href = '/login';
-            }
+            setError(err.message);
+            toast.error(err.message);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchUserDeclarations();
-    }, []);
+        loadUserDeclarations();
+    }, [user]);
 
     const openDetailsModal = (declaration) => {
         console.log('Déclaration complète:', declaration);
@@ -79,16 +79,25 @@ function UserDashboard() {
         setShowDeclarationForm(true);
     };
 
-    const handleDeclarationSubmit = async (newDeclaration) => {
+    const handleDeclarationSubmit = async (formData) => {
         try {
-            await fetchUserDeclarations();
-            toast.success('Déclaration créée avec succès !');
+            // Créer une nouvelle déclaration
+            const newDeclaration = {
+                id: Date.now(),
+                userId: user.id,
+                ...formData,
+                status: 'En attente',
+                declarationDate: new Date().toISOString()
+            };
+
+            // Ajouter la déclaration à la liste
+            setDeclarations(prev => [...prev, newDeclaration]);
+            setShowDeclarationForm(false);
+            toast.success('Déclaration soumise avec succès');
         } catch (err) {
-            console.error('Erreur lors de la création de la déclaration:', err);
-            toast.error(err.response?.data?.message || 'Erreur lors de la création de la déclaration');
+            console.error('Erreur lors de la soumission de la déclaration:', err);
+            toast.error('Erreur lors de la soumission de la déclaration');
         }
-        setShowDeclarationForm(false);
-        setSelectedDeclaration(null);
     };
 
     const handleDownloadReceipt = async (declaration) => {
@@ -133,14 +142,14 @@ function UserDashboard() {
         }
     };
 
-    const handleDeleteDeclaration = async (declarationId) => {
+    const handleDeleteDeclaration = (declarationId) => {
         try {
-            await api.delete(`/declarations/${declarationId}`);
-            setDeclarations(prev => prev.filter(decl => decl._id !== declarationId));
+            // Supprimer la déclaration localement
+            setDeclarations(prev => prev.filter(decl => decl.id !== declarationId));
             toast.success('Déclaration supprimée avec succès');
         } catch (err) {
             console.error('Erreur lors de la suppression de la déclaration:', err);
-            toast.error(err.response?.data?.message || 'Erreur lors de la suppression de la déclaration');
+            toast.error('Erreur lors de la suppression de la déclaration');
         }
     };
 
@@ -197,108 +206,84 @@ function UserDashboard() {
                 </div>
             </div>
 
-            {!showDeclarationForm ? (
-                <button onClick={handleNewDeclaration} className="new-declaration-btn">
-                    Nouvelle déclaration
+            <div className="dashboard-actions">
+                <button 
+                    className="btn-primary"
+                    onClick={() => setShowDeclarationForm(true)}
+                >
+                    Nouvelle Déclaration
                 </button>
-            ) : (
-                <div className="declaration-form-section">
-                    <button onClick={() => setShowDeclarationForm(false)} className="back-btn">
-                        Retour au tableau de bord
-                    </button>
-                    <DeclarationForm onSubmitSuccess={handleDeclarationSubmit} />
-                </div>
-            )}
+            </div>
 
-            {!showDeclarationForm && (
-                <div className="declaration-list-container">
-                    <div className="declaration-filters">
+            <div className="filter-tabs">
+                <button 
+                    className={activeFilter === 'pending' ? 'active' : ''}
+                    onClick={() => setActiveFilter('pending')}
+                >
+                    En attente
+                </button>
+                <button 
+                    className={activeFilter === 'completed' ? 'active' : ''}
+                    onClick={() => setActiveFilter('completed')}
+                >
+                    Traitées
+                </button>
+                <button 
+                    className={activeFilter === 'rejected' ? 'active' : ''}
+                    onClick={() => setActiveFilter('rejected')}
+                >
+                    Refusées
+                </button>
+            </div>
+
+            <div className="declarations-list">
+                {filteredDeclarations.length === 0 ? (
+                    <p className="no-declarations">Aucune déclaration trouvée</p>
+                ) : (
+                    filteredDeclarations.map(declaration => (
+                        <div key={declaration.id} className="declaration-card">
+                            <div className="declaration-header">
+                                <h3>Déclaration #{declaration.id}</h3>
+                                <span className={`status-${declaration.status.toLowerCase().replace(/\s/g, '-')}`}>
+                                    {declaration.status}
+                                </span>
+                            </div>
+                            <div className="declaration-content">
+                                <p><strong>Type:</strong> {declaration.type === 'objet' ? 'Perte d\'objet' : 'Disparition de personne'}</p>
+                                <p><strong>Date:</strong> {dayjs(declaration.declarationDate).format('DD/MM/YYYY HH:mm')}</p>
+                                <p><strong>Lieu:</strong> {declaration.location}</p>
+                                <p><strong>Description:</strong> {declaration.description}</p>
+                            </div>
+                            {declaration.status === 'En attente' && (
+                                <div className="declaration-actions">
+                                    <button
+                                        onClick={() => handleDeleteDeclaration(declaration.id)}
+                                        className="btn-delete"
+                                    >
+                                        Supprimer
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {showDeclarationForm && (
+                <div className="modal">
+                    <div className="modal-content">
+                        <h3>Nouvelle Déclaration</h3>
+                        <DeclarationForm 
+                            onSubmit={handleDeclarationSubmit}
+                            isSubmitting={false}
+                        />
                         <button 
-                            className={`filter-btn ${activeFilter === 'all' ? 'active' : ''}`}
-                            onClick={() => setActiveFilter('all')}
+                            className="btn-close"
+                            onClick={() => setShowDeclarationForm(false)}
                         >
-                            Toutes les déclarations
-                        </button>
-                        <button 
-                            className={`filter-btn ${activeFilter === 'pending' ? 'active' : ''}`}
-                            onClick={() => setActiveFilter('pending')}
-                        >
-                            En attente
-                        </button>
-                        <button 
-                            className={`filter-btn ${activeFilter === 'completed' ? 'active' : ''}`}
-                            onClick={() => setActiveFilter('completed')}
-                        >
-                            Traitées
-                        </button>
-                        <button 
-                            className={`filter-btn ${activeFilter === 'rejected' ? 'active' : ''}`}
-                            onClick={() => setActiveFilter('rejected')}
-                        >
-                            Refusées
+                            Annuler
                         </button>
                     </div>
-
-                    <h3>Mes déclarations</h3>
-                    {filteredDeclarations.length === 0 ? (
-                        <p>Aucune déclaration {activeFilter !== 'all' ? 'dans cette catégorie' : ''}.</p>
-                    ) : (
-                        <div className="declaration-cards">
-                            {filteredDeclarations.map((declaration) => (
-                                <div 
-                                    key={declaration._id} 
-                                    className="declaration-card"
-                                    onClick={() => openDetailsModal(declaration)}
-                                    style={{ cursor: 'pointer' }}
-                                >
-                                    <h4>Déclaration de {declaration.declarationType === 'objet' ? 'perte d\'objet' : 'disparition de personne'}</h4>
-                                    <div className="declaration-info">
-                                        <p><strong>N° de déclaration:</strong> {declaration._id}</p>
-                                        <p>
-                                            <strong>Statut:</strong>{' '}
-                                            <span className={`status-badge status-${declaration.status.toLowerCase().replace(/\s/g, '-')}`}>
-                                                {declaration.status}
-                                            </span>
-                                        </p>
-                                        {declaration.status === 'Refusée' && declaration.rejectReason && (
-                                            <div className="reject-reason">
-                                                <strong>Motif du refus :</strong> {declaration.rejectReason}
-                                            </div>
-                                        )}
-                                        {declaration.declarationType === 'objet' ? (
-                                            <>
-                                                <p><strong>Catégorie:</strong> {declaration.objectDetails?.objectCategory || 'Non spécifiée'}</p>
-                                                <p><strong>Nom de l'objet:</strong> {declaration.objectDetails?.objectName || 'Non spécifié'}</p>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <p><strong>Nom:</strong> {declaration.personDetails?.lastName || 'Non spécifié'}</p>
-                                                <p><strong>Prénom:</strong> {declaration.personDetails?.firstName || 'Non spécifié'}</p>
-                                            </>
-                                        )}
-                                        <p><strong>Commissariat:</strong> {declaration.commissariat?.name || 'Non assigné'}</p>
-                                    </div>
-
-                                    {declaration.photos && declaration.photos.length > 0 && (
-                                        <div className="declaration-photos">
-                                            {declaration.photos.map((photo, index) => (
-                                                <img 
-                                                    key={index} 
-                                                    src={`http://localhost:5000/uploads/${photo}`} 
-                                                    alt={`Photo ${index + 1}`} 
-                                                    className="declaration-photo"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        openPhotoModal(photo);
-                                                    }}
-                                                />
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
                 </div>
             )}
 
@@ -324,7 +309,7 @@ function UserDashboard() {
                             <div className="modal-footer">
                                 {selectedDeclaration.status === 'Refusée' && (
                                     <button 
-                                        onClick={() => handleDeleteDeclaration(selectedDeclaration._id)}
+                                        onClick={() => handleDeleteDeclaration(selectedDeclaration.id)}
                                         className="btn delete-btn"
                                     >
                                         Supprimer la déclaration

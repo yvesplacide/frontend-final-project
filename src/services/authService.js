@@ -1,65 +1,83 @@
 // frontend/src/services/authService.js
-import api from './api'; // Notre instance Axios configurée
-import Cookies from 'js-cookie'; // Pour stocker le token JWT
+import Cookies from 'js-cookie';
+import { mockUsers, delay } from './mockData';
 
 const register = async (userData) => {
     try {
-        const response = await api.post('/auth/register', userData);
-        if (response.data.token) {
-            Cookies.set('token', response.data.token, { expires: 7 }); // Stocke le token pour 7 jours
-            // Optionnel: Stocker les infos utilisateur aussi si nécessaire, mais le token contient déjà le rôle
-            // localStorage.setItem('user', JSON.stringify(response.data));
+        await delay(500); // Simuler un délai réseau
+        
+        // Vérifier si l'email existe déjà
+        const existingUser = mockUsers.find(user => user.email === userData.email);
+        if (existingUser) {
+            throw new Error('Cet email est déjà utilisé');
         }
-        return response.data;
+
+        // Créer un nouvel utilisateur
+        const newUser = {
+            id: mockUsers.length + 1,
+            ...userData,
+            role: 'user' // Par défaut, les nouveaux utilisateurs sont des utilisateurs normaux
+        };
+
+        // Simuler un token JWT
+        const token = btoa(JSON.stringify({ id: newUser.id, role: newUser.role }));
+        Cookies.set('token', token, { expires: 7 });
+
+        return { user: newUser, token };
     } catch (error) {
-        throw error.response?.data?.message || error.message;
+        throw error.message;
     }
 };
 
 const login = async (userData) => {
     try {
-        const response = await api.post('/auth/login', userData);
-        if (response.data.token) {
-            Cookies.set('token', response.data.token, { expires: 7 }); // Stocke le token pour 7 jours
-            // Optionnel: Stocker les infos utilisateur
-            // localStorage.setItem('user', JSON.stringify(response.data));
+        await delay(500); // Simuler un délai réseau
+
+        const user = mockUsers.find(
+            u => u.email === userData.email && u.password === userData.password
+        );
+
+        if (!user) {
+            throw new Error('Email ou mot de passe incorrect');
         }
-        return response.data;
+
+        // Simuler un token JWT
+        const token = btoa(JSON.stringify({ id: user.id, role: user.role }));
+        Cookies.set('token', token, { expires: 7 });
+
+        return { user, token };
     } catch (error) {
-        throw error.response?.data?.message || error.message;
+        throw error.message;
     }
 };
 
 const logout = () => {
-    // Supprimer le token des cookies
     Cookies.remove('token');
-    
-    // Supprimer toutes les données du localStorage
     localStorage.clear();
-    
-    // Supprimer toutes les données du sessionStorage
     sessionStorage.clear();
-    
-    // Supprimer les données du cache du navigateur
-    if ('caches' in window) {
-        caches.keys().then(cacheNames => {
-            cacheNames.forEach(cacheName => {
-                caches.delete(cacheName);
-            });
-        });
-    }
 };
 
-// Fonction pour obtenir l'utilisateur courant basé sur le token (utile pour rafraîchir la page)
 const getMe = async () => {
     try {
-        const response = await api.get('/auth/me');
-        return response.data;
+        await delay(500); // Simuler un délai réseau
+        
+        const token = Cookies.get('token');
+        if (!token) {
+            throw new Error('Non authentifié');
+        }
+
+        const { id } = JSON.parse(atob(token));
+        const user = mockUsers.find(u => u.id === id);
+        
+        if (!user) {
+            throw new Error('Utilisateur non trouvé');
+        }
+
+        return user;
     } catch (error) {
-        throw error.response?.data?.message || error.message;
+        throw error.message;
     }
 };
-
 
 const authService = {
     register,

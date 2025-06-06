@@ -1,13 +1,13 @@
 // frontend/src/pages/CommissariatDashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import api from '../services/api';
+import { mockDeclarations } from '../services/mockData';
 import { toast } from 'react-toastify';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr'; // Importer la locale française pour dayjs
 import '../styles/CommissariatDashboard.css'; // Import du CSS
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { FaHome, FaChartBar } from 'react-icons/fa';
+import { FaHome, FaChartBar, FaListAlt } from 'react-icons/fa';
 import NotificationCounter from '../components/common/NotificationCounter';
 import ReceiptGenerator from '../components/declaration/ReceiptGenerator';
 dayjs.locale('fr');
@@ -23,11 +23,13 @@ function CommissariatDashboard() {
     const [selectedPhoto, setSelectedPhoto] = useState(null);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
-    const [activeTab, setActiveTab] = useState('pending');
+    const [activeTab, setActiveTab] = useState('dashboard');
     const [activeSidebarTab, setActiveSidebarTab] = useState('dashboard');
     const [searchQuery, setSearchQuery] = useState('');
     const location = useLocation();
     const navigate = useNavigate();
+    const [filter, setFilter] = useState('all');
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Détecter l'onglet actif en fonction de l'URL
     useEffect(() => {
@@ -39,94 +41,59 @@ function CommissariatDashboard() {
         }
     }, [location.pathname]);
 
-    const fetchCommissariatDeclarations = async () => {
+    useEffect(() => {
+        if (!user || user.role !== 'commissariat_agent') {
+            navigate('/login');
+            return;
+        }
+        loadDeclarations();
+    }, [user, navigate]);
+
+    const loadDeclarations = () => {
         try {
-            setLoading(true);
-            setError(null);
-
             if (!user || user.role !== 'commissariat_agent') {
-                throw new Error('Accès non autorisé. Vous devez être un agent de commissariat.');
+                throw new Error('Accès non autorisé. Vous devez être agent de commissariat.');
             }
 
-            let commissariatId;
-            if (user.commissariat) {
-                commissariatId = typeof user.commissariat === 'object' 
-                    ? user.commissariat._id 
-                    : user.commissariat;
-            } else {
-                const userResponse = await api.get('/auth/me');
-                if (userResponse.data.commissariat) {
-                    commissariatId = typeof userResponse.data.commissariat === 'object' 
-                        ? userResponse.data.commissariat._id 
-                        : userResponse.data.commissariat;
-                } else {
-                    throw new Error('Commissariat non assigné à cet agent');
-                }
-            }
+            // Filtrer les déclarations pour ce commissariat
+            const commissariatDeclarations = mockDeclarations.filter(
+                d => d.commissariat === user.commissariat
+            );
 
-            if (!commissariatId) {
-                throw new Error('ID du commissariat non disponible');
-            }
-
-            console.log('Fetching declarations for commissariat:', commissariatId);
-            const response = await api.get(`/declarations/commissariat/${commissariatId}`);
-            console.log('Raw response data:', response.data);
-
-            if (Array.isArray(response.data)) {
-                // Séparer les déclarations par statut
-                const pendingDeclarations = response.data.filter(decl => decl.status === 'En attente');
-                const rejectedDeclarations = response.data.filter(decl => decl.status === 'Refusée');
-                const treatedDeclarations = response.data.filter(decl => decl.status === 'Traité');
-
-                console.log('Pending declarations:', pendingDeclarations.length);
-                console.log('Rejected declarations:', rejectedDeclarations.length);
-                console.log('Treated declarations:', treatedDeclarations.length);
-
-                setDeclarations(pendingDeclarations);
-                setRejectedDeclarations(rejectedDeclarations);
-                setTreatedDeclarations(treatedDeclarations);
-                setError(null);
-            } else {
-                setError('Format de données invalide reçu du serveur');
-            }
+            setDeclarations(commissariatDeclarations);
+            setError(null);
         } catch (err) {
             console.error('Erreur lors du chargement des déclarations:', err);
-            setError(err.message || err.response?.data?.message || 'Impossible de charger les déclarations.');
-            toast.error(err.message || err.response?.data?.message || 'Erreur lors du chargement des déclarations.');
+            setError(err.message);
+            toast.error(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    // Charger les déclarations au montage du composant
-    useEffect(() => {
-        console.log('User data in useEffect:', user);
-        if (user) {
-            console.log('User role:', user.role);
-            console.log('User commissariat:', user.commissariat);
-            console.log('User commissariat type:', typeof user.commissariat);
-            
-            // Si c'est un agent de commissariat mais que les infos du commissariat ne sont pas présentes
-            if (user.role === 'commissariat_agent' && !user.commissariat) {
-                // Recharger les données utilisateur
-                api.get('/auth/me')
-                    .then(response => {
-                        if (response.data.commissariat) {
-                            setUser(prevUser => ({
-                                ...prevUser,
-                                commissariat: response.data.commissariat
-                            }));
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Erreur lors du rechargement des données utilisateur:', error);
-                        toast.error('Erreur lors du chargement des informations du commissariat');
-                    });
-            }
-            
-            fetchCommissariatDeclarations();
+    const handleStatusChange = (declarationId, newStatus) => {
+        try {
+            const updatedDeclarations = declarations.map(d => {
+                if (d.id === declarationId) {
+                    return { ...d, status: newStatus };
+                }
+                return d;
+            });
+            setDeclarations(updatedDeclarations);
+            toast.success(`Déclaration ${newStatus === 'accepted' ? 'acceptée' : 'rejetée'} avec succès`);
+        } catch (err) {
+            console.error('Erreur lors du changement de statut:', err);
+            toast.error('Erreur lors du changement de statut');
         }
-    }, [user]);
+    };
+
+    const filteredDeclarations = declarations.filter(declaration => {
+        const matchesFilter = filter === 'all' || declaration.status === filter;
+        const matchesSearch = searchTerm === '' || 
+            declaration.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            declaration.type.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesFilter && matchesSearch;
+    });
 
     const openDetailsModal = (declaration) => {
         setSelectedDeclaration(declaration);
@@ -186,19 +153,8 @@ function CommissariatDashboard() {
         }
     };
 
-    // Fonction de filtrage des déclarations
-    const filterDeclarations = (declarations) => {
-        if (!searchQuery.trim()) return declarations;
-        
-        const query = searchQuery.toLowerCase().trim();
-        return declarations.filter(declaration => {
-            const declarationId = declaration.declarationNumber || declaration._id;
-            const declarantName = declaration.user ? 
-                `${declaration.user.firstName} ${declaration.user.lastName}`.toLowerCase() : '';
-            
-            return declarationId.toLowerCase().includes(query) || 
-                   declarantName.includes(query);
-        });
+    const handleNavigation = (path) => {
+        navigate(path);
     };
 
     const renderContent = () => {
@@ -220,140 +176,101 @@ function CommissariatDashboard() {
                             </div>
                         )}
 
-                        <div className="declaration-tabs">
-                            <button 
-                                className={`tab-button ${activeTab === 'pending' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('pending')}
+                        <div className="dashboard-cards">
+                            <div 
+                                className="dashboard-card"
+                                onClick={() => handleNavigation('/commissariat-declarations')}
                             >
-                                Déclarations en attente
-                            </button>
-                            <button 
-                                className={`tab-button ${activeTab === 'rejected' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('rejected')}
+                                <FaListAlt className="card-icon" />
+                                <h3>Gérer les Déclarations</h3>
+                                <p>Consultez et gérez les déclarations reçues</p>
+                            </div>
+
+                            <div 
+                                className="dashboard-card"
+                                onClick={() => handleNavigation('/commissariat-statistics')}
                             >
-                                Déclarations refusées
-                            </button>
-                            <button 
-                                className={`tab-button ${activeTab === 'treated' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('treated')}
-                            >
-                                Déclarations traitées
-                            </button>
+                                <FaChartBar className="card-icon" />
+                                <h3>Voir les Statistiques</h3>
+                                <p>Consultez les statistiques des déclarations</p>
+                            </div>
                         </div>
 
-                        <div className="declaration-list-container">
-                            <h3>{
-                                activeTab === 'pending' ? 'Déclarations en Attente' :
-                                activeTab === 'rejected' ? 'Déclarations Refusées' :
-                                'Déclarations Traitées'
-                            }</h3>
+                        <div className="dashboard-filters">
+                            <div className="search-bar">
+                                <input
+                                    type="text"
+                                    placeholder="Rechercher une déclaration..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <div className="filter-buttons">
+                                <button
+                                    className={filter === 'all' ? 'active' : ''}
+                                    onClick={() => setFilter('all')}
+                                >
+                                    Toutes
+                                </button>
+                                <button
+                                    className={filter === 'pending' ? 'active' : ''}
+                                    onClick={() => setFilter('pending')}
+                                >
+                                    En attente
+                                </button>
+                                <button
+                                    className={filter === 'accepted' ? 'active' : ''}
+                                    onClick={() => setFilter('accepted')}
+                                >
+                                    Acceptées
+                                </button>
+                                <button
+                                    className={filter === 'rejected' ? 'active' : ''}
+                                    onClick={() => setFilter('rejected')}
+                                >
+                                    Rejetées
+                                </button>
+                            </div>
+                        </div>
 
-                            {/* Barre de recherche pour les déclarations refusées et traitées */}
-                            {(activeTab === 'rejected' || activeTab === 'treated') && (
-                                <div className="search-container">
-                                    <input
-                                        type="text"
-                                        placeholder="Rechercher par numéro de déclaration..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="search-input"
-                                    />
-                                    {searchQuery && (
-                                        <button 
-                                            className="clear-search-btn"
-                                            onClick={() => setSearchQuery('')}
-                                        >
-                                            Effacer
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-
-                            {loading ? (
-                                <div className="loading-container">
-                                    <div className="loading-spinner"></div>
-                                    <p>Chargement des données...</p>
-                                </div>
-                            ) : error ? (
-                                <div className="error-container">
-                                    <p className="error-message">{error}</p>
-                                    <button onClick={fetchCommissariatDeclarations} className="btn primary-btn">
-                                        Réessayer
-                                    </button>
-                                </div>
-                            ) : (activeTab === 'pending' ? declarations : 
-                                 activeTab === 'rejected' ? filterDeclarations(rejectedDeclarations) :
-                                 filterDeclarations(treatedDeclarations)).length === 0 ? (
-                                <p>Aucune déclaration {
-                                    activeTab === 'pending' ? 'en attente' :
-                                    activeTab === 'rejected' ? 'refusée' :
-                                    'traitée'
-                                } {searchQuery ? 'ne correspond à votre recherche' : 'pour votre commissariat pour l\'instant'}.</p>
+                        <div className="declarations-list">
+                            {filteredDeclarations.length === 0 ? (
+                                <p className="no-declarations">Aucune déclaration trouvée</p>
                             ) : (
-                                <div className="declaration-cards">
-                                    {(activeTab === 'pending' ? declarations : 
-                                      activeTab === 'rejected' ? filterDeclarations(rejectedDeclarations) :
-                                      filterDeclarations(treatedDeclarations)).map((declaration) => (
-                                        <div 
-                                            key={declaration._id} 
-                                            className="declaration-card"
-                                            onClick={() => openDetailsModal(declaration)}
-                                            style={{ cursor: 'pointer' }}
-                                            title="Cliquez ici pour voir les détails de la déclaration"
-                                        >
-                                            <div className="declaration-info">
-                                                <h4>Déclaration de {declaration.declarationType === 'objet' ? 'perte d\'objet' : 'disparition de personne'}</h4>
-                                                <p><strong>N° de déclaration:</strong> {declaration.declarationNumber || declaration._id}</p>
-                                                <p><strong>Statut:</strong> <span className={`status-${declaration.status.toLowerCase().replace(/\s/g, '-')}`}>{declaration.status}</span></p>
-                                                {declaration.status === 'Refusée' && declaration.rejectReason && (
-                                                    <p><strong>Motif du refus:</strong> {declaration.rejectReason}</p>
-                                                )}
-                                                <p><strong>Déclarant:</strong> {declaration.user ? `${declaration.user.firstName} ${declaration.user.lastName}` : 'Inconnu'}</p>
-                                                {declaration.declarationType === 'objet' && (
-                                                    <>
-                                                        <p><strong>Catégorie:</strong> {declaration.objectDetails?.objectCategory || 'Non spécifiée'}</p>
-                                                        <p><strong>Nom:</strong> {declaration.objectDetails?.objectName || 'Non spécifié'}</p>
-                                                        <p><strong>Marque:</strong> {declaration.objectDetails?.objectBrand || 'Non spécifiée'}</p>
-                                                    </>
-                                                )}
-                                                {declaration.declarationType === 'personne' && (
-                                                    <>
-                                                        <p><strong>Nom:</strong> {declaration.personDetails?.lastName || 'Non spécifié'}</p>
-                                                        <p><strong>Prénom:</strong> {declaration.personDetails?.firstName || 'Non spécifié'}</p>
-                                                        <p><strong>Date de naissance:</strong> {declaration.personDetails?.dateOfBirth ? dayjs(declaration.personDetails.dateOfBirth).format('DD MMMM YYYY') : 'Non spécifiée'}</p>
-                                                        {declaration.personDetails?.gender && <p><strong>Genre:</strong> {declaration.personDetails.gender}</p>}
-                                                        <p><strong>Dernier lieu vu:</strong> {declaration.personDetails?.lastSeenLocation || declaration.location}</p>
-                                                    </>
-                                                )}
-                                                {declaration.status === 'Traité' && (
-                                                    <>
-                                                        <p><strong>Date de traitement:</strong> {dayjs(declaration.processedAt).format('DD/MM/YYYY HH:mm')}</p>
-                                                        <p><strong>Récépissé:</strong> {declaration.receiptNumber || 'Non disponible'}</p>
-                                                    </>
-                                                )}
-                                            </div>
-
-                                            {declaration.photos && declaration.photos.length > 0 ? (
-                                                <div className="declaration-photos" onClick={e => e.stopPropagation()}>
-                                                    {declaration.photos.map((photo, index) => (
-                                                        <img 
-                                                            key={index} 
-                                                            src={`http://localhost:5000/uploads/${photo}`} 
-                                                            alt={`Photo ${index + 1}`} 
-                                                            className="declaration-photo-thumbnail"
-                                                            onClick={(e) => openPhotoModal(`http://localhost:5000/uploads/${photo}`, e)}
-                                                            title="Cliquez pour voir la photo en grand"
-                                                        />
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="no-photos">
-                                                    <p>Aucune photo disponible</p>
-                                                </div>
-                                            )}
+                                filteredDeclarations.map(declaration => (
+                                    <div key={declaration.id} className="declaration-card">
+                                        <div className="declaration-header">
+                                            <h3>Déclaration #{declaration.id}</h3>
+                                            <span className={`status ${declaration.status}`}>
+                                                {declaration.status === 'pending' && 'En attente'}
+                                                {declaration.status === 'accepted' && 'Acceptée'}
+                                                {declaration.status === 'rejected' && 'Rejetée'}
+                                            </span>
                                         </div>
-                                    ))}
-                                </div>
+                                        <div className="declaration-details">
+                                            <p><strong>Type:</strong> {declaration.type}</p>
+                                            <p><strong>Date:</strong> {dayjs(declaration.date).format('DD/MM/YYYY')}</p>
+                                            <p><strong>Lieu:</strong> {declaration.location}</p>
+                                            <p><strong>Description:</strong> {declaration.description}</p>
+                                        </div>
+                                        {declaration.status === 'pending' && (
+                                            <div className="declaration-actions">
+                                                <button
+                                                    className="btn-accept"
+                                                    onClick={() => handleStatusChange(declaration.id, 'accepted')}
+                                                >
+                                                    Accepter
+                                                </button>
+                                                <button
+                                                    className="btn-reject"
+                                                    onClick={() => handleStatusChange(declaration.id, 'rejected')}
+                                                >
+                                                    Rejeter
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
                             )}
                         </div>
                     </>
@@ -555,7 +472,7 @@ function CommissariatDashboard() {
                                             api.put(`/declarations/${updatedDeclaration._id}`, updatedDeclaration)
                                                 .then(() => {
                                                     toast.success('Déclaration traitée avec succès');
-                                                    fetchCommissariatDeclarations(); // Recharger toutes les déclarations
+                                                    loadDeclarations(); // Recharger toutes les déclarations
                                                 })
                                                 .catch(error => {
                                                     console.error('Erreur lors de la mise à jour de la déclaration:', error);

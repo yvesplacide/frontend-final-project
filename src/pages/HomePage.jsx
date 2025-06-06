@@ -12,11 +12,21 @@ function HomePage() {
     const featureRefs = useRef([]);
     const stepRefs = useRef([]);
 
-    const handleDeclareLoss = () => {
-        if (user) {
-            navigate('/declaration/new');
-        } else {
+    const handleDashboardAccess = () => {
+        if (!user) {
             navigate('/auth');
+            return;
+        }
+
+        switch (user.role) {
+            case 'user':
+                navigate('/user-dashboard');
+                break;
+            case 'commissariat_agent':
+                navigate('/commissariat-dashboard');
+                break;
+            default:
+                navigate('/');
         }
     };
 
@@ -84,14 +94,11 @@ function HomePage() {
                     <p>Vous êtes connecté à votre espace personnel. Déclarez une perte ou consultez vos déclarations existantes en quelques clics.</p>
                     <div className="hero-buttons">
                         <button 
-                            onClick={handleDeclareLoss}
+                            onClick={handleDashboardAccess}
                             className="hero-btn primary-btn"
                         >
-                            Déclarer une perte
-                        </button>
-                        <Link to="/user-dashboard" className="hero-btn secondary-btn">
                             Accéder à mon tableau de bord
-                        </Link>
+                        </button>
                     </div>
                 </div>
             );
@@ -104,27 +111,27 @@ function HomePage() {
                 <p>Simplifiez vos démarches administratives. Déclarez vos objets perdus ou personnes disparues en quelques clics et suivez l'avancement de votre dossier en temps réel.</p>
                 <div className="hero-buttons">
                     <button 
-                        onClick={handleDeclareLoss}
+                        onClick={() => navigate('/auth')}
                         className="hero-btn primary-btn"
                     >
-                        Déclarer une perte
-                    </button>
-                    <Link to="/auth" className="hero-btn secondary-btn">
                         Se connecter
-                    </Link>
-                    <Link to="/auth?mode=register" className="hero-btn secondary-btn">
+                    </button>
+                    <button 
+                        onClick={() => navigate('/auth?mode=register')}
+                        className="hero-btn secondary-btn"
+                    >
                         S'inscrire
-                    </Link>
+                    </button>
                 </div>
             </div>
         );
     };
 
     return (
-        <>
-            <section className="hero-section">
+        <div className="home-container">
+            <div className="hero-section">
                 {renderHeroContent()}
-            </section>
+            </div>
 
             {!user || user.role === 'user' ? (
                 <>
@@ -175,7 +182,7 @@ function HomePage() {
                     </section>
                 </>
             ) : null}
-        </>
+        </div>
     );
 }
 
